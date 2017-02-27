@@ -1,0 +1,31 @@
+name:                   follow-tail
+version:                0.1.0.0
+synopsis:               Haskell implementation of "tail -f" as a library.
+description:            Haskell implementation of @\"tail -f\"@ as a library.
+homepage:               https://github.com/trskop/follow-tail
+license:                BSD3
+license-file:           LICENSE
+author:                 Peter Trško
+maintainer:             peter.trsko@gmail.com
+copyright:              (c) 2017, Peter Trško
+category:               System
+build-type:             Simple
+cabal-version:          >=1.10
+
+extra-source-files:     ChangeLog.md, README.md
+
+library
+  hs-source-dirs:       src
+  exposed-modules:      System.IO.FollowTail
+  -- other-modules:
+
+  default-language:     Haskell2010
+  other-extensions:     NoImplicitPrelude
+
+  build-depends:
+      base >=4.9 && <4.10
+    , mmap
+    , hinotify
+    , bytestring
+
+  ghc-options:          -Wall -Werror
