@@ -1,0 +1,71 @@
+name: &name follow-tail
+version: 0.1.0.0
+synopsis: Haskell implementation of "tail -f" as a library.
+description: Haskell implementation of @\"tail -f\"@ as a library.
+
+license: BSD3
+author: Peter Trško
+maintainer: peter.trsko@gmail.com
+copyright: (c) 2017-2018, Peter Trško
+
+github: trskop/follow-tail
+category: System
+
+extra-source-files:
+  - ChangeLog.md
+  - README.md
+
+flags:
+  examples:
+    description: Build example(s).
+    manual: true
+    default: false
+
+ghc-options: -Wall
+
+when:
+  - condition: impl(ghc >=8)
+    then:
+      ghc-options:
+        - -Wimplicit-prelude
+        - -Wmissing-import-lists
+    else:
+      ghc-options:
+        - -fwarn-implicit-prelude
+        - -fwarn-missing-import-lists
+        - -fwarn-missing-export-lists
+
+  - condition: impl(ghc >=8.4)
+    ghc-options:
+      - -Wmissing-export-lists
+
+dependencies:
+  - base >=4.9 && <5
+
+  # Older versions of 'mmap' do not provide 'mmapWithFilePtr' function.
+  - mmap >=0.5.2 && <0.6
+
+  # Older versions of 'hinotify' do not provide 'withINotify' function.
+  #
+  # Note that version 0.3.10 broke API compatibility when they switched from
+  # using 'FilePath' to 'RawFilePath' ('ByteString').
+  - hinotify >=0.3 && <0.4
+
+  - bytestring <0.11
+
+library:
+  source-dirs: src
+
+executables:
+  follow-tail-example:
+    when:
+      - condition: flag(examples)
+        then:
+          buildable: true
+        else:
+          buildable: false
+
+    source-dirs: example
+    main: Main.hs
+    dependencies:
+      - *name

@@ -1,26 +1,28 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TupleSections #-}
 -- |
 -- Module:       $HEADER$
 -- Description:  Haskell implementation of "tail -f" as a library.
--- Copyright:    (c) 2017 Peter Trško
+-- Copyright:    (c) 2017-2018 Peter Trško
 -- License:      BSD3
 -- Maintainer:   Peter Trško <peter.trsko@gmail.com>
 -- Stability:    Provisional
--- Portability:  GHC specific language extensions; Linux OS (Inotify).
+-- Portability:  GHC specific language extensions; Linux (Inotify).
 --
 -- Haskell implementation of @\"tail -f\"@ as a library.
 module System.IO.FollowTail
     (
     -- * Follow File Changes
-      NumberOfLines
+      whileFollowingFile
+    , NumberOfLines
     , AreInitialData
+
+    -- * Low-level Functions
     , followFile
     , stopFollowingFile
 
-    -- * Low-level Functions
+    -- * Very Low-level Functions
     , FileOffset
     , readFileTail
     , fileTailPtr
@@ -31,16 +33,18 @@ module System.IO.FollowTail
 import Prelude ((+), (-), fromIntegral)
 
 import Control.Applicative ((<*>), pure)
+import Control.Exception (finally, bracket)
 import Control.Monad ((>>=))
 import Data.Bool (Bool(False, True), (&&), otherwise)
 import Data.Eq ((==))
-import Data.Function (($), (.))
+import Data.Function (($), (.), const)
 import Data.Functor ((<$>))
 import Data.IORef (atomicWriteIORef, newIORef, readIORef)
 import Data.Int (Int)
 import Data.Maybe (Maybe(Nothing))
 import Data.Monoid (mempty)
 import Data.Ord ((<=))
+import Data.String (fromString)
 import Data.Word (Word, Word8)
 import Foreign (Ptr, castPtr, peekByteOff, plusPtr)
 import System.IO
@@ -59,7 +63,7 @@ import qualified Data.ByteString.Internal as Internal (create, memcpy)
 import qualified Data.ByteString.Lazy as Lazy (ByteString)
 import qualified Data.ByteString.Lazy as Lazy.ByteString (fromChunks, hGet)
 import qualified Data.ByteString.Lazy.Internal as Internal (defaultChunkSize)
-import System.INotify (EventVariety(Modify), INotify)
+import System.INotify (EventVariety(Modify), INotify, withINotify)
 import qualified System.INotify as INotify
     ( WatchDescriptor
     , addWatch
@@ -175,23 +179,27 @@ type AreInitialData = Bool
 -- Be aware, that this function assumes that the file already exists.
 followFile
     :: INotify
-    -> FilePath
-    -- ^ File to watch.
     -> NumberOfLines
     -- ^ Number of lines to read from the end of file before waiting for it
     -- to change.
+    -> FilePath
+    -- ^ File to watch.
     -> (AreInitialData -> Lazy.ByteString -> IO ())
     -- ^ Action invoked whenever there are new data available.
     -> IO (INotify.WatchDescriptor, Handle)
-followFile inotify file numberOfLines processData = do
+followFile inotify numberOfLines file processData = do
     (initialData, initialOffset) <- readFileTail file numberOfLines
     processData True initialData
     h <- openBinaryFile file ReadMode
     ref <- newIORef initialOffset
-    ih <- INotify.addWatch inotify [Modify] file $ \_event -> do
+
+    -- API changed in "hinotify 0.3.10" (yes, minor version change), and it now
+    -- accepts 'RawFilePath' ('ByteString') instead of 'FilePath', hence the
+    -- 'fromString'.
+    ih <- INotify.addWatch inotify [Modify] (fromString file) $ \_event -> do
         (delta, offset) <- readIORef ref >>= hGetDelta h
-        processData False delta
-        atomicWriteIORef ref offset
+        processData False delta `finally` atomicWriteIORef ref offset
+
     pure (ih, h)
 
 -- | Stop following file, and perform cleanup.
@@ -199,3 +207,18 @@ stopFollowingFile :: (INotify.WatchDescriptor, Handle) -> IO ()
 stopFollowingFile (wd, h) = do
     INotify.removeWatch wd
     hClose h
+
+whileFollowingFile
+    :: NumberOfLines
+    -- ^ Number of lines to read from the end of file before waiting for it
+    -- to change.
+    -> FilePath
+    -- ^ File to watch.
+    -> (AreInitialData -> Lazy.ByteString -> IO ())
+    -- ^ Action invoked whenever there are new data available.
+    -> IO a
+    -- ^ Stop following file when this action terminates.
+    -> IO a
+whileFollowingFile numberOfLines file onData action = withINotify $ \inotify ->
+    followFile inotify numberOfLines file onData `bracket` stopFollowingFile
+        $ const action
