@@ -23,7 +23,7 @@ library
   other-extensions:     NoImplicitPrelude
 
   build-depends:
-      base >=4.9 && <4.10
+      base >=4.9 && <5
     , mmap
     , hinotify
     , bytestring
